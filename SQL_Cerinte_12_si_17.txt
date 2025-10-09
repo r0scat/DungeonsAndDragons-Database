@@ -1,0 +1,292 @@
+-- EXERCITIUL 12
+--1
+--a, b
+
+SELECT
+    p2.nume_personaj,
+    vraji_clasa.nume_vraji
+FROM (
+    SELECT
+        p.personaj_id,
+        p.nume as nume_personaj,
+        c.nume as nume_clasa,
+        c.clasa_id
+    FROM personaj p
+    LEFT JOIN personaj_clasa pc ON p.personaj_id = pc.personaj_id
+    LEFT JOIN clasa c ON pc.clasa_id = c.clasa_id
+    WHERE c.nume='Vrajitor'
+    GROUP BY p.personaj_id, p.nume, c.nume, c.clasa_id
+    ) p2
+LEFT JOIN personaj_campanie pc ON p2.personaj_id = pc.personaj_id
+LEFT JOIN campanie c ON pc.campanie_id = c.campanie_id
+LEFT JOIN (
+        SELECT
+            c.clasa_id,
+            c.nume as nume_clasa_vrajitor,
+            v.nume as nume_vraji
+        FROM clasa c
+        LEFT JOIN item_clasa ic on c.clasa_id = ic.clasa_id
+        LEFT JOIN (
+                SELECT
+                    a.atribut_id,
+                    a.nume,
+                    a.descriere,
+                    a.bonus,
+                    v.durata,
+                    v.putere,
+                    v.scoala,
+                    v.timp_necesar
+                FROM atribut a
+                LEFT JOIN vraja v on v.atribut_id = a.atribut_id
+                WHERE a.atribut_id IN (SELECT v2.atribut_id FROM vraja v2)
+                ) v on ic.atribut_id = v.atribut_id
+        WHERE c.nume='Vrajitor'
+        GROUP BY c.nume, v.nume, c.clasa_id
+) vraji_clasa ON vraji_clasa.clasa_id = p2.clasa_id
+WHERE c.nume = 'Werewolves'
+GROUP BY p2.nume_personaj, vraji_clasa.nume_vraji;
+
+--2
+--c
+SELECT
+    u.username,
+    COUNT(*) AS campanii_create
+FROM utilizator u
+JOIN campanie c ON c.utilizator_id = u.utilizator_id
+WHERE u.tip_utilizator = 'organizator'
+GROUP BY u.username
+HAVING COUNT(*) > (
+        SELECT AVG(cnt)
+        FROM (
+        SELECT COUNT(*) AS cnt
+        FROM campanie
+        GROUP BY utilizator_id
+      )
+)
+ORDER BY u.username;
+
+--3
+--d, e
+SELECT
+      UPPER(u.nume || ', ' || u.prenume) AS nume_afisat,
+      SUBSTR(u.email,1,INSTR(u.email,'@')-1) AS local_email,
+      NVL(TO_CHAR(u.numar_telefon), 'necunoscut') AS telefon,
+      DECODE(u.tip_utilizator,
+             'jucator',      'Jucător',
+             'organizator',  'Organizator',
+             ' necunoscut') AS tip_textual,
+      TO_CHAR(u.data_inregistrare,'DD.MM.YYYY') AS data_fmt,
+      ROUND(MONTHS_BETWEEN(SYSDATE, u.data_inregistrare),1) AS luni_de_la,
+      CASE
+            WHEN u.data_inregistrare > ADD_MONTHS(SYSDATE,-1) THEN 'Nou'
+            ELSE 'Vechi'
+      END AS statut_cont
+FROM utilizator u
+ORDER BY u.nume, u.prenume
+FETCH FIRST 4 ROWS ONLY;
+
+--4
+--f
+WITH traducere_lookup AS (
+    SELECT
+        ab.abilitati_id,
+        b.bonus AS bonusChar,
+        b2.bonus AS bonusCon,
+        b3.bonus AS bonusStr,
+        b4.bonus AS bonusDex,
+        b5.bonus AS bonusInt,
+        b6.bonus AS bonusWis
+    FROM arbore_de_abilitati ab
+    JOIN bonus_abilitati b ON ab.scor_charisma = b.scor
+    JOIN bonus_abilitati b2 ON ab.scor_constitutie = b2.scor
+    JOIN bonus_abilitati b3 ON ab.scor_putere = b3.scor
+    JOIN bonus_abilitati b4 ON ab.scor_dexteritate = b4.scor
+    JOIN bonus_abilitati b5 ON ab.scor_inteligenta = b5.scor
+    JOIN bonus_abilitati b6 ON ab.scor_intelepciune = b6.scor
+),
+suma_bonusuri AS (
+    SELECT
+        abilitati_id,
+        bonusWis + bonusStr + bonusInt + bonusCon + bonusChar + bonusDex AS total
+    FROM traducere_lookup
+)
+SELECT
+    p.nume,
+    suma_bonusuri.total,
+    CASE
+        WHEN
+            suma_bonusuri.total > (SELECT AVG(total) FROM suma_bonusuri)
+        THEN 'da'
+        WHEN
+            suma_bonusuri.total = (SELECT AVG(total) FROM suma_bonusuri)
+        THEN 'medie'
+    ELSE 'nu'
+    END AS verificare_peste_medie
+FROM personaj p
+JOIN suma_bonusuri ON p.abilitati_id = suma_bonusuri.abilitati_id
+group by p.nume, suma_bonusuri.total;
+
+
+--5
+--c
+
+SELECT
+    (u.nume || ' ' || u.prenume) AS nume_complet,
+    u.tip_utilizator,
+    COUNT(DISTINCT c.campanie_id) AS nr_campanii_organizate,
+    COUNT(DISTINCT p.personaj_id) AS nr_personaje_detinute
+FROM utilizator u
+LEFT JOIN campanie c ON u.utilizator_id = c.utilizator_id
+LEFT JOIN personaj p ON u.utilizator_id = p.utilizator_id
+GROUP BY u.nume, u.prenume, u.tip_utilizator;
+
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- EXERCITIUL 13
+
+
+--1
+UPDATE personaj_clasa pc
+SET nivel = nivel + 1
+WHERE pc.personaj_id IN (
+        SELECT p.personaj_id
+        FROM personaj p
+        JOIN personaj_campanie pca ON p.personaj_id = pca.personaj_id
+        WHERE pca.campanie_id = (
+            SELECT campanie_id
+            FROM campanie
+            WHERE nume = 'NethRodas gods'
+        )
+)
+AND pc.clasa_id = (
+        SELECT clasa_id
+        FROM clasa
+        WHERE nume = 'Paladin'
+);
+
+
+--2
+UPDATE utilizator u
+SET parola = 'nouaParola123'
+WHERE u.utilizator_id IN (
+    SELECT DISTINCT p.utilizator_id
+    FROM personaj p
+    JOIN personaj_campanie pc ON p.personaj_id = pc.personaj_id
+    JOIN campanie c ON pc.campanie_id = c.campanie_id
+    WHERE c.utilizator_id = (
+        SELECT utilizator_id
+        FROM utilizator
+        WHERE nume = 'Poscu' AND prenume = 'Teo'
+    )
+);
+
+--3
+
+DELETE FROM componenta_vraja
+WHERE atribut_id IN (
+    SELECT atribut_id
+    FROM vraja
+    WHERE scoala = 'iluzie'
+    );
+
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- EXERCITIUL 14
+
+
+CREATE VIEW personaje_si_utilizator AS
+SELECT
+   p.personaj_id,
+   p.abilitati_id,
+   p.tip_personalitate,
+   p.neam_id,
+   p.nume,
+   p.utilizator_id,
+   (u.nume || ' ' || u.prenume) “nume complet”
+FROM personaj p
+JOIN utilizator u ON u.utilizator_id = p.utilizator_id;
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- EXERCITIUL 15
+
+-- 1. outer-join
+SELECT
+   u.nume AS utilizator,
+   p.nume AS personaj,
+   count (DISTINCT persc.clasa_id) AS clase,
+   count (DISTINCT pc.campanie_id) AS campanii
+FROM utilizator u
+LEFT JOIN personaj p ON u.utilizator_id = p.utilizator_id
+LEFT JOIN personaj_campanie pc ON p.personaj_id = pc.personaj_id
+LEFT JOIN personaj_clasa persc ON p.personaj_id = persc.personaj_id
+GROUP BY u.nume, p.nume;
+
+
+-- de asemenea a trebuit sa mai adaug date pentru a primi un output in care sa arate ca a functionat outer join-ul: 
+
+INSERT INTO UTILIZATOR (TIP_UTILIZATOR, NUME, PRENUME, USERNAME, PAROLA, DATA_INREGISTRARE, EMAIL, NUMAR_TELEFON)
+VALUES ('organizator', 'Stefan', 'Groza', 'grza', 'aiaieplssss', TO_DATE('12.06.2025','DD.MM.YYYY'), 'groza@gmail.com', 07272344444);
+
+INSERT INTO ARBORE_DE_ABILITATI (SCOR_PUTERE, SCOR_CHARISMA, SCOR_CONSTITUTIE, SCOR_INTELIGENTA, SCOR_INTELEPCIUNE, SCOR_DEXTERITATE)
+VALUES (10, 14, 20, 10, 8, 15);
+
+INSERT INTO PERSONAJ (UTILIZATOR_ID, ABILITATI_ID, NEAM_ID, NUME, TIP_PERSONALITATE)
+VALUES ('1', '41', '3', 'Lacusta', 'legiuit-bun');
+
+
+-- 2. division
+
+-- looking through the list of characters.
+--for each one: “Is there any campaign before 2024 that this character did not participate in?”
+--If no such campaign exists, the character is returned.
+ 
+SELECT personaj_id, nume
+FROM personaj
+WHERE NOT EXISTS(
+-- for each campaign that started before 2024, check if the character did NOT participate.
+   SELECT 1
+   FROM campanie c
+   WHERE c.data_inceput <= TO_DATE('2023.12.31', 'YYYY.MM.DD')
+   AND NOT EXISTS(
+	-- this returns all character–campaign combinations (who participated in what).
+       SELECT 1
+       FROM personaj p
+       JOIN personaj_campanie pc ON p.personaj_id = pc.personaj_id
+       JOIN campanie c2 ON c2.campanie_id = pc.campanie_id
+       )
+);
+
+
+-- 3. analiza top n
+SELECT
+   p.personaj_id,
+   p.nume,
+   atribute
+FROM (
+   SELECT
+       p.personaj_id,
+       p.nume,
+       COUNT(DISTINCT ic.atribut_id) AS atribute
+   FROM personaj p
+   JOIN personaj_clasa pc ON p.personaj_id = pc.personaj_id
+   JOIN clasa c ON c.clasa_id = pc.clasa_id
+   JOIN item_clasa ic ON c.clasa_id = ic.clasa_id
+   GROUP BY p.personaj_id, p.nume, p.utilizator_id
+   ORDER BY atribute DESC
+    ) p
+WHERE ROWNUM <= 2;
+
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- EXERCITIUL 16
+
+SELECT
+   p.nume,
+   p.tip_personalitate
+FROM personaj p
+JOIN utilizator u ON p.utilizator_id = u.utilizator_id
+WHERE UPPER(u.nume) = 'POSCU' AND p.neam_id = 5;
